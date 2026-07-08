@@ -1,40 +1,66 @@
 const fs = require("fs");
-const path = require("path");
+const { execSync } = require("child_process");
 
 const patterns = [
-  { name: "GitHub Token", regex: /ghp_[A-Za-z0-9]{20,}/g },
-  { name: "Google API Key", regex: /AIza[0-9A-Za-z\\-_]{20,}/g },
-  { name: "Password", regex: /password\\s*=\\s*["'][^"']+["']/gi }
+  {
+    name: "GitHub Token",
+    regex: /ghp_[A-Za-z0-9]{20,}/g,
+  },
+  {
+    name: "Google API Key",
+    regex: /AIza[0-9A-Za-z\-_]{20,}/g,
+  },
+  {
+    name: "Password",
+    regex: /password\s*=\s*["'][^"']+["']/gi,
+  },
 ];
 
-function scanFile(filePath) {
-  const data = fs.readFileSync(filePath, "utf8");
+let foundSecrets = false;
 
-  console.log(`\nScanning: ${filePath}`);
+try {
+  const files = execSync("git diff --cached --name-only")
+    .toString()
+    .trim()
+    .split("\n")
+    .filter(file => file);
 
-  patterns.forEach(pattern => {
-    const matches = data.match(pattern.regex);
+  if (files.length === 0) {
+    console.log("No staged files found.");
+    process.exit(0);
+  }
 
-    if (matches) {
-      matches.forEach(match => {
-        console.log(`Found ${pattern.name}: ${match}`);
-      });
-    }
-  });
-}
-
-function scanDirectory(dir) {
-  const files = fs.readdirSync(dir);
+  console.log("Scanning staged files...\n");
 
   files.forEach(file => {
-    const fullPath = path.join(dir, file);
+    if (!fs.existsSync(file)) return;
 
-    if (fs.statSync(fullPath).isDirectory()) {
-      scanDirectory(fullPath);
-    } else {
-      scanFile(fullPath);
-    }
+    const content = fs.readFileSync(file, "utf8");
+
+    patterns.forEach(pattern => {
+      const matches = content.match(pattern.regex);
+
+      if (matches) {
+        foundSecrets = true;
+
+        matches.forEach(match => {
+          console.log(`❌ ${pattern.name} found`);
+          console.log(`📄 File: ${file}`);
+          console.log(`🔑 ${match}\n`);
+        });
+      }
+    });
   });
-}
 
-scanDirectory("./scans");
+  if (foundSecrets) {
+    console.log("🚫 Commit blocked because secrets were detected.");
+    process.exit(1);
+  }
+
+  console.log("✅ No secrets found.");
+  process.exit(0);
+
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
