@@ -1,1 +1,1 @@
-const token = "hello";
+const githubToken = "Hello";
